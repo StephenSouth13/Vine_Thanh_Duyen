@@ -1,34 +1,41 @@
-# Supabase Complete Setup Guide
+-- ---------------------------
+-- Supabase: Full single-run setup script for Vine app
+-- Paste into Supabase SQL Editor and run
+-- ---------------------------
 
-This guide contains all SQL commands needed to set up the Vine application database from scratch.
-
-## Prerequisites
-- Supabase project created
-- You have access to the SQL editor in Supabase dashboard
-
-## Setup Instructions
-
-### Step 1: Enable Required Extensions
-```sql
+-- 1) Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-```
 
-### Step 2: Create Enum Types
-```sql
-CREATE TYPE app_role AS ENUM ('admin', 'leader', 'staff');
-CREATE TYPE leave_type AS ENUM ('annual', 'sick', 'personal', 'unpaid');
-CREATE TYPE leave_status AS ENUM ('pending', 'approved', 'rejected');
-CREATE TYPE task_status AS ENUM ('todo', 'in_progress', 'review', 'done');
-CREATE TYPE task_priority AS ENUM ('low', 'medium', 'high', 'urgent');
-CREATE TYPE booking_status AS ENUM ('pending', 'approved', 'rejected', 'cancelled');
-CREATE TYPE attendance_type AS ENUM ('check_in', 'check_out');
-```
+-- 2) Enum types (IF NOT EXISTS not supported for TYPE in older PG versions; drop then create safe guards)
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'app_role') THEN
+    CREATE TYPE app_role AS ENUM ('admin', 'leader', 'staff');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'leave_type') THEN
+    CREATE TYPE leave_type AS ENUM ('annual', 'sick', 'personal', 'unpaid');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'leave_status') THEN
+    CREATE TYPE leave_status AS ENUM ('pending', 'approved', 'rejected');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_status') THEN
+    CREATE TYPE task_status AS ENUM ('todo', 'in_progress', 'review', 'done');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'task_priority') THEN
+    CREATE TYPE task_priority AS ENUM ('low', 'medium', 'high', 'urgent');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'booking_status') THEN
+    CREATE TYPE booking_status AS ENUM ('pending', 'approved', 'rejected', 'cancelled');
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'attendance_type') THEN
+    CREATE TYPE attendance_type AS ENUM ('check_in', 'check_out');
+  END IF;
+END$$;
 
-### Step 3: Create Tables
 
-#### Teams Table
-```sql
-CREATE TABLE IF NOT EXISTS teams (
+-- 3) Tables
+-- Teams
+CREATE TABLE IF NOT EXISTS public.teams (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     description TEXT,
@@ -36,11 +43,9 @@ CREATE TABLE IF NOT EXISTS teams (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-```
 
-#### Shifts Table
-```sql
-CREATE TABLE IF NOT EXISTS shifts (
+-- Shifts
+CREATE TABLE IF NOT EXISTS public.shifts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     start_time TIME NOT NULL,
@@ -48,30 +53,26 @@ CREATE TABLE IF NOT EXISTS shifts (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-```
 
-#### User Roles Table
-```sql
-CREATE TABLE IF NOT EXISTS user_roles (
+-- User Roles
+CREATE TABLE IF NOT EXISTS public.user_roles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     role app_role NOT NULL DEFAULT 'staff',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(user_id, role)
 );
-```
 
-#### Profiles Table
-```sql
-CREATE TABLE IF NOT EXISTS profiles (
+-- Profiles
+CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT NOT NULL UNIQUE,
     first_name TEXT,
     last_name TEXT,
     avatar_url TEXT,
     cv_url TEXT,
-    team_id UUID REFERENCES teams(id) ON DELETE SET NULL,
-    shift_id UUID REFERENCES shifts(id) ON DELETE SET NULL,
+    team_id UUID REFERENCES public.teams(id) ON DELETE SET NULL,
+    shift_id UUID REFERENCES public.shifts(id) ON DELETE SET NULL,
     phone TEXT,
     date_of_birth DATE,
     annual_leave_balance INTEGER DEFAULT 12,
@@ -79,11 +80,9 @@ CREATE TABLE IF NOT EXISTS profiles (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-```
 
-#### Attendance Table
-```sql
-CREATE TABLE IF NOT EXISTS attendance (
+-- Attendance
+CREATE TABLE IF NOT EXISTS public.attendance (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     type attendance_type NOT NULL,
@@ -92,30 +91,9 @@ CREATE TABLE IF NOT EXISTS attendance (
     notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-```
 
-#### Tasks Table
-```sql
-CREATE TABLE IF NOT EXISTS tasks (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    title TEXT NOT NULL,
-    description TEXT,
-    status task_status NOT NULL DEFAULT 'todo',
-    priority task_priority NOT NULL DEFAULT 'medium',
-    assignee_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-    creator_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
-    team_id UUID REFERENCES teams(id) ON DELETE SET NULL,
-    column_id UUID REFERENCES task_columns(id) ON DELETE SET NULL,
-    deadline TIMESTAMPTZ,
-    completed_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-```
-
-#### Task Columns Table (for dynamic board columns)
-```sql
-CREATE TABLE IF NOT EXISTS task_columns (
+-- Task Columns (create before tasks because tasks references it)
+CREATE TABLE IF NOT EXISTS public.task_columns (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     description TEXT,
@@ -127,22 +105,35 @@ CREATE TABLE IF NOT EXISTS task_columns (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE(name, created_by)
 );
-```
 
-#### Task Comments Table
-```sql
-CREATE TABLE IF NOT EXISTS task_comments (
+-- Tasks
+CREATE TABLE IF NOT EXISTS public.tasks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    task_id UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    description TEXT,
+    status task_status NOT NULL DEFAULT 'todo',
+    priority task_priority NOT NULL DEFAULT 'medium',
+    assignee_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+    creator_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+    team_id UUID REFERENCES public.teams(id) ON DELETE SET NULL,
+    column_id UUID REFERENCES public.task_columns(id) ON DELETE SET NULL,
+    deadline TIMESTAMPTZ,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Task Comments
+CREATE TABLE IF NOT EXISTS public.task_comments (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    task_id UUID NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-```
 
-#### Meeting Rooms Table
-```sql
-CREATE TABLE IF NOT EXISTS meeting_rooms (
+-- Meeting Rooms
+CREATE TABLE IF NOT EXISTS public.meeting_rooms (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
     location TEXT,
@@ -152,13 +143,11 @@ CREATE TABLE IF NOT EXISTS meeting_rooms (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-```
 
-#### Room Bookings Table
-```sql
-CREATE TABLE IF NOT EXISTS room_bookings (
+-- Room Bookings
+CREATE TABLE IF NOT EXISTS public.room_bookings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    room_id UUID NOT NULL REFERENCES meeting_rooms(id) ON DELETE CASCADE,
+    room_id UUID NOT NULL REFERENCES public.meeting_rooms(id) ON DELETE CASCADE,
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     description TEXT,
@@ -171,11 +160,9 @@ CREATE TABLE IF NOT EXISTS room_bookings (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-```
 
-#### Leave Requests Table
-```sql
-CREATE TABLE IF NOT EXISTS leave_requests (
+-- Leave Requests
+CREATE TABLE IF NOT EXISTS public.leave_requests (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     type leave_type NOT NULL,
@@ -189,11 +176,9 @@ CREATE TABLE IF NOT EXISTS leave_requests (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-```
 
-#### Audit Logs Table
-```sql
-CREATE TABLE IF NOT EXISTS audit_logs (
+-- Audit Logs
+CREATE TABLE IF NOT EXISTS public.audit_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
     action TEXT NOT NULL,
@@ -204,29 +189,26 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     user_agent TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-```
 
-### Step 4: Enable Row Level Security (RLS)
 
-```sql
-ALTER TABLE teams ENABLE ROW LEVEL SECURITY;
-ALTER TABLE shifts ENABLE ROW LEVEL SECURITY;
-ALTER TABLE user_roles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
-ALTER TABLE tasks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE task_columns ENABLE ROW LEVEL SECURITY;
-ALTER TABLE task_comments ENABLE ROW LEVEL SECURITY;
-ALTER TABLE meeting_rooms ENABLE ROW LEVEL SECURITY;
-ALTER TABLE room_bookings ENABLE ROW LEVEL SECURITY;
-ALTER TABLE leave_requests ENABLE ROW LEVEL SECURITY;
-ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
-```
+-- 4) Enable Row Level Security (RLS) on tables
+ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.shifts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.task_columns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.task_comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.meeting_rooms ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.room_bookings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.leave_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
-### Step 5: Create Helper Functions
 
-#### Check User Role Function
-```sql
+-- 5) Helper Functions
+
+-- has_role
 CREATE OR REPLACE FUNCTION public.has_role(_user_id UUID, _role app_role)
 RETURNS BOOLEAN
 LANGUAGE SQL
@@ -240,10 +222,8 @@ AS $$
     WHERE user_id = _user_id AND role = _role
   )
 $$;
-```
 
-#### Get User's Team Function
-```sql
+-- get_user_team
 CREATE OR REPLACE FUNCTION public.get_user_team(_user_id UUID)
 RETURNS UUID
 LANGUAGE SQL
@@ -253,10 +233,8 @@ SET search_path = public
 AS $$
   SELECT team_id FROM public.profiles WHERE id = _user_id
 $$;
-```
 
-#### Updated At Trigger Function
-```sql
+-- update_updated_at_column trigger function
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -264,316 +242,357 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
-```
 
-#### New User Handler Function
-```sql
+-- New user handler: create profile + default role
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
-LANGUAGE PLPGSQL
+LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = public
 AS $$
 BEGIN
+  -- Insert profile if not exists
   INSERT INTO public.profiles (id, email, first_name, last_name)
   VALUES (
     NEW.id,
     NEW.email,
     COALESCE(NEW.raw_user_meta_data->>'first_name', ''),
     COALESCE(NEW.raw_user_meta_data->>'last_name', '')
-  );
+  )
+  ON CONFLICT (id) DO NOTHING;
   
+  -- Insert default role 'staff' if not exists
   INSERT INTO public.user_roles (user_id, role)
-  VALUES (NEW.id, 'staff');
+  VALUES (NEW.id, 'staff')
+  ON CONFLICT (user_id, role) DO NOTHING;
   
   RETURN NEW;
 END;
 $$;
-```
 
-### Step 6: Create Triggers
 
-#### New User Signup Trigger
-```sql
+-- 6) Triggers
+
+-- New user signup trigger on auth.users
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
-```
 
-#### Updated At Triggers
-```sql
-DROP TRIGGER IF EXISTS update_teams_updated_at ON teams;
-CREATE TRIGGER update_teams_updated_at BEFORE UPDATE ON teams FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- Updated_at triggers for tables
+-- teams
+DROP TRIGGER IF EXISTS update_teams_updated_at ON public.teams;
+CREATE TRIGGER update_teams_updated_at BEFORE UPDATE ON public.teams FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-DROP TRIGGER IF EXISTS update_shifts_updated_at ON shifts;
-CREATE TRIGGER update_shifts_updated_at BEFORE UPDATE ON shifts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- shifts
+DROP TRIGGER IF EXISTS update_shifts_updated_at ON public.shifts;
+CREATE TRIGGER update_shifts_updated_at BEFORE UPDATE ON public.shifts FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
-CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- profiles
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON public.profiles;
+CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-DROP TRIGGER IF EXISTS update_tasks_updated_at ON tasks;
-CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON tasks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- tasks
+DROP TRIGGER IF EXISTS update_tasks_updated_at ON public.tasks;
+CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON public.tasks FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-DROP TRIGGER IF EXISTS update_task_columns_updated_at ON task_columns;
-CREATE TRIGGER update_task_columns_updated_at BEFORE UPDATE ON task_columns FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- task_columns
+DROP TRIGGER IF EXISTS update_task_columns_updated_at ON public.task_columns;
+CREATE TRIGGER update_task_columns_updated_at BEFORE UPDATE ON public.task_columns FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-DROP TRIGGER IF EXISTS update_meeting_rooms_updated_at ON meeting_rooms;
-CREATE TRIGGER update_meeting_rooms_updated_at BEFORE UPDATE ON meeting_rooms FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- meeting_rooms
+DROP TRIGGER IF EXISTS update_meeting_rooms_updated_at ON public.meeting_rooms;
+CREATE TRIGGER update_meeting_rooms_updated_at BEFORE UPDATE ON public.meeting_rooms FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-DROP TRIGGER IF EXISTS update_room_bookings_updated_at ON room_bookings;
-CREATE TRIGGER update_room_bookings_updated_at BEFORE UPDATE ON room_bookings FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- room_bookings
+DROP TRIGGER IF EXISTS update_room_bookings_updated_at ON public.room_bookings;
+CREATE TRIGGER update_room_bookings_updated_at BEFORE UPDATE ON public.room_bookings FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-DROP TRIGGER IF EXISTS update_leave_requests_updated_at ON leave_requests;
-CREATE TRIGGER update_leave_requests_updated_at BEFORE UPDATE ON leave_requests FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-```
+-- leave_requests
+DROP TRIGGER IF EXISTS update_leave_requests_updated_at ON public.leave_requests;
+CREATE TRIGGER update_leave_requests_updated_at BEFORE UPDATE ON public.leave_requests FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
-### Step 7: Set Up RLS Policies
 
-#### Teams Policies
-```sql
-DROP POLICY IF EXISTS "Everyone can view teams" ON teams;
-DROP POLICY IF EXISTS "Admins can manage teams" ON teams;
+-- 7) RLS Policies
 
-CREATE POLICY "Everyone can view teams" ON teams FOR SELECT USING (true);
-CREATE POLICY "Admins can manage teams" ON teams FOR ALL USING (public.has_role(auth.uid(), 'admin'));
-```
+-- TEAMS
+DROP POLICY IF EXISTS "Everyone can view teams" ON public.teams;
+DROP POLICY IF EXISTS "Admins can manage teams" ON public.teams;
+CREATE POLICY "Everyone can view teams" ON public.teams FOR SELECT USING (true);
+CREATE POLICY "Admins can manage teams" ON public.teams FOR ALL USING (public.has_role(auth.uid(), 'admin'));
 
-#### Shifts Policies
-```sql
-DROP POLICY IF EXISTS "Everyone can view shifts" ON shifts;
-DROP POLICY IF EXISTS "Admins can manage shifts" ON shifts;
+-- SHIFTS
+DROP POLICY IF EXISTS "Everyone can view shifts" ON public.shifts;
+DROP POLICY IF EXISTS "Admins can manage shifts" ON public.shifts;
+CREATE POLICY "Everyone can view shifts" ON public.shifts FOR SELECT USING (true);
+CREATE POLICY "Admins can manage shifts" ON public.shifts FOR ALL USING (public.has_role(auth.uid(), 'admin'));
 
-CREATE POLICY "Everyone can view shifts" ON shifts FOR SELECT USING (true);
-CREATE POLICY "Admins can manage shifts" ON shifts FOR ALL USING (public.has_role(auth.uid(), 'admin'));
-```
+-- USER_ROLES
+DROP POLICY IF EXISTS "Users can view their own roles" ON public.user_roles;
+DROP POLICY IF EXISTS "Admins can manage all roles" ON public.user_roles;
+CREATE POLICY "Users can view their own roles" ON public.user_roles FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Admins can manage all roles" ON public.user_roles FOR ALL USING (public.has_role(auth.uid(), 'admin'));
 
-#### User Roles Policies
-```sql
-DROP POLICY IF EXISTS "Users can view their own roles" ON user_roles;
-DROP POLICY IF EXISTS "Admins can manage all roles" ON user_roles;
+-- PROFILES
+DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Leaders can view team profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Admins can view all profiles" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Admins can manage all profiles" ON public.profiles;
 
-CREATE POLICY "Users can view their own roles" ON user_roles FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Admins can manage all roles" ON user_roles FOR ALL USING (public.has_role(auth.uid(), 'admin'));
-```
-
-#### Profiles Policies
-```sql
-DROP POLICY IF EXISTS "Users can view their own profile" ON profiles;
-DROP POLICY IF EXISTS "Leaders can view team profiles" ON profiles;
-DROP POLICY IF EXISTS "Admins can view all profiles" ON profiles;
-DROP POLICY IF EXISTS "Users can update their own profile" ON profiles;
-DROP POLICY IF EXISTS "Admins can manage all profiles" ON profiles;
-
-CREATE POLICY "Users can view their own profile" ON profiles FOR SELECT USING (auth.uid() = id);
-CREATE POLICY "Leaders can view team profiles" ON profiles FOR SELECT USING (
+CREATE POLICY "Users can view their own profile" ON public.profiles FOR SELECT USING (auth.uid() = id);
+CREATE POLICY "Leaders can view team profiles" ON public.profiles FOR SELECT USING (
   public.has_role(auth.uid(), 'leader') AND team_id = public.get_user_team(auth.uid())
 );
-CREATE POLICY "Admins can view all profiles" ON profiles FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
-CREATE POLICY "Users can update their own profile" ON profiles FOR UPDATE USING (auth.uid() = id);
-CREATE POLICY "Admins can manage all profiles" ON profiles FOR ALL USING (public.has_role(auth.uid(), 'admin'));
-```
+CREATE POLICY "Admins can view all profiles" ON public.profiles FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "Users can update their own profile" ON public.profiles FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "Admins can manage all profiles" ON public.profiles FOR ALL USING (public.has_role(auth.uid(), 'admin'));
 
-#### Attendance Policies
-```sql
-DROP POLICY IF EXISTS "Users can view their own attendance" ON attendance;
-DROP POLICY IF EXISTS "Leaders can view team attendance" ON attendance;
-DROP POLICY IF EXISTS "Admins can view all attendance" ON attendance;
-DROP POLICY IF EXISTS "Users can create their own attendance" ON attendance;
+-- ATTENDANCE
+DROP POLICY IF EXISTS "Users can view their own attendance" ON public.attendance;
+DROP POLICY IF EXISTS "Leaders can view team attendance" ON public.attendance;
+DROP POLICY IF EXISTS "Admins can view all attendance" ON public.attendance;
+DROP POLICY IF EXISTS "Users can create their own attendance" ON public.attendance;
 
-CREATE POLICY "Users can view their own attendance" ON attendance FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Leaders can view team attendance" ON attendance FOR SELECT USING (
+CREATE POLICY "Users can view their own attendance" ON public.attendance FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Leaders can view team attendance" ON public.attendance FOR SELECT USING (
   public.has_role(auth.uid(), 'leader') AND 
-  EXISTS (SELECT 1 FROM profiles WHERE id = user_id AND team_id = public.get_user_team(auth.uid()))
+  EXISTS (SELECT 1 FROM public.profiles WHERE id = user_id AND team_id = public.get_user_team(auth.uid()))
 );
-CREATE POLICY "Admins can view all attendance" ON attendance FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
-CREATE POLICY "Users can create their own attendance" ON attendance FOR INSERT WITH CHECK (auth.uid() = user_id);
-```
+CREATE POLICY "Admins can view all attendance" ON public.attendance FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "Users can create their own attendance" ON public.attendance FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-#### Tasks Policies
-```sql
-DROP POLICY IF EXISTS "Users can view assigned tasks" ON tasks;
-DROP POLICY IF EXISTS "Leaders can view team tasks" ON tasks;
-DROP POLICY IF EXISTS "Admins can view all tasks" ON tasks;
-DROP POLICY IF EXISTS "Users can create tasks" ON tasks;
-DROP POLICY IF EXISTS "Users can update their tasks" ON tasks;
-DROP POLICY IF EXISTS "Users can delete their own tasks" ON tasks;
-DROP POLICY IF EXISTS "Admins can delete any tasks" ON tasks;
+-- TASKS
+DROP POLICY IF EXISTS "Users can view assigned tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Leaders can view team tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Admins can view all tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Users can create tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Users can update their tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Users can delete their own tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Admins can delete any tasks" ON public.tasks;
 
-CREATE POLICY "Users can view assigned tasks" ON tasks FOR SELECT USING (
+CREATE POLICY "Users can view assigned tasks" ON public.tasks FOR SELECT USING (
   auth.uid() = assignee_id OR auth.uid() = creator_id
 );
-CREATE POLICY "Leaders can view team tasks" ON tasks FOR SELECT USING (
+CREATE POLICY "Leaders can view team tasks" ON public.tasks FOR SELECT USING (
   public.has_role(auth.uid(), 'leader') AND team_id = public.get_user_team(auth.uid())
 );
-CREATE POLICY "Admins can view all tasks" ON tasks FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
-CREATE POLICY "Users can create tasks" ON tasks FOR INSERT WITH CHECK (auth.uid() = creator_id);
-CREATE POLICY "Users can update their tasks" ON tasks FOR UPDATE USING (
+CREATE POLICY "Admins can view all tasks" ON public.tasks FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "Users can create tasks" ON public.tasks FOR INSERT WITH CHECK (auth.uid() = creator_id);
+CREATE POLICY "Users can update their tasks" ON public.tasks FOR UPDATE USING (
   auth.uid() = assignee_id OR auth.uid() = creator_id OR 
   public.has_role(auth.uid(), 'leader') OR public.has_role(auth.uid(), 'admin')
 );
-CREATE POLICY "Users can delete their own tasks" ON tasks FOR DELETE USING (auth.uid() = creator_id);
-CREATE POLICY "Admins can delete any tasks" ON tasks FOR DELETE USING (public.has_role(auth.uid(), 'admin'));
-```
+CREATE POLICY "Users can delete their own tasks" ON public.tasks FOR DELETE USING (auth.uid() = creator_id);
+CREATE POLICY "Admins can delete any tasks" ON public.tasks FOR DELETE USING (public.has_role(auth.uid(), 'admin'));
 
-#### Task Columns Policies
-```sql
-DROP POLICY IF EXISTS "Users can view their own columns" ON task_columns;
-DROP POLICY IF EXISTS "Admins can view all columns" ON task_columns;
-DROP POLICY IF EXISTS "Users can create columns" ON task_columns;
-DROP POLICY IF EXISTS "Users can update their own columns" ON task_columns;
-DROP POLICY IF EXISTS "Users can delete their own columns" ON task_columns;
+-- TASK_COLUMNS
+DROP POLICY IF EXISTS "Users can view their own columns" ON public.task_columns;
+DROP POLICY IF EXISTS "Admins can view all columns" ON public.task_columns;
+DROP POLICY IF EXISTS "Users can create columns" ON public.task_columns;
+DROP POLICY IF EXISTS "Users can update their own columns" ON public.task_columns;
+DROP POLICY IF EXISTS "Users can delete their own columns" ON public.task_columns;
 
-CREATE POLICY "Users can view their own columns" ON task_columns FOR SELECT USING (auth.uid() = created_by);
-CREATE POLICY "Admins can view all columns" ON task_columns FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
-CREATE POLICY "Users can create columns" ON task_columns FOR INSERT WITH CHECK (auth.uid() = created_by);
-CREATE POLICY "Users can update their own columns" ON task_columns FOR UPDATE USING (auth.uid() = created_by);
-CREATE POLICY "Users can delete their own columns" ON task_columns FOR DELETE USING (auth.uid() = created_by);
-```
+CREATE POLICY "Users can view their own columns" ON public.task_columns FOR SELECT USING (auth.uid() = created_by);
+CREATE POLICY "Admins can view all columns" ON public.task_columns FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "Users can create columns" ON public.task_columns FOR INSERT WITH CHECK (auth.uid() = created_by);
+CREATE POLICY "Users can update their own columns" ON public.task_columns FOR UPDATE USING (auth.uid() = created_by);
+CREATE POLICY "Users can delete their own columns" ON public.task_columns FOR DELETE USING (auth.uid() = created_by);
 
-#### Task Comments Policies
-```sql
-DROP POLICY IF EXISTS "Users can view comments on their tasks" ON task_comments;
-DROP POLICY IF EXISTS "Users can create comments" ON task_comments;
+-- TASK_COMMENTS
+DROP POLICY IF EXISTS "Users can view comments on their tasks" ON public.task_comments;
+DROP POLICY IF EXISTS "Users can create comments" ON public.task_comments;
 
-CREATE POLICY "Users can view comments on their tasks" ON task_comments FOR SELECT USING (
+CREATE POLICY "Users can view comments on their tasks" ON public.task_comments FOR SELECT USING (
   EXISTS (
-    SELECT 1 FROM tasks WHERE id = task_id AND (assignee_id = auth.uid() OR creator_id = auth.uid())
+    SELECT 1 FROM public.tasks WHERE id = task_id AND (assignee_id = auth.uid() OR creator_id = auth.uid())
   )
 );
-CREATE POLICY "Users can create comments" ON task_comments FOR INSERT WITH CHECK (auth.uid() = user_id);
-```
+CREATE POLICY "Users can create comments" ON public.task_comments FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-#### Meeting Rooms Policies
-```sql
-DROP POLICY IF EXISTS "Everyone can view active meeting rooms" ON meeting_rooms;
-DROP POLICY IF EXISTS "Admins can manage meeting rooms" ON meeting_rooms;
+-- MEETING_ROOMS
+DROP POLICY IF EXISTS "Everyone can view active meeting rooms" ON public.meeting_rooms;
+DROP POLICY IF EXISTS "Admins can manage meeting rooms" ON public.meeting_rooms;
 
-CREATE POLICY "Everyone can view active meeting rooms" ON meeting_rooms FOR SELECT USING (is_active = true);
-CREATE POLICY "Admins can manage meeting rooms" ON meeting_rooms FOR ALL USING (public.has_role(auth.uid(), 'admin'));
-```
+CREATE POLICY "Everyone can view active meeting rooms" ON public.meeting_rooms FOR SELECT USING (is_active = true);
+CREATE POLICY "Admins can manage meeting rooms" ON public.meeting_rooms FOR ALL USING (public.has_role(auth.uid(), 'admin'));
 
-#### Room Bookings Policies
-```sql
-DROP POLICY IF EXISTS "Users can view their own bookings" ON room_bookings;
-DROP POLICY IF EXISTS "Leaders can view team bookings" ON room_bookings;
-DROP POLICY IF EXISTS "Admins can view all bookings" ON room_bookings;
-DROP POLICY IF EXISTS "Users can create bookings" ON room_bookings;
-DROP POLICY IF EXISTS "Users can update their own bookings" ON room_bookings;
-DROP POLICY IF EXISTS "Leaders and admins can update bookings" ON room_bookings;
+-- ROOM_BOOKINGS
+DROP POLICY IF EXISTS "Users can view their own bookings" ON public.room_bookings;
+DROP POLICY IF EXISTS "Leaders can view team bookings" ON public.room_bookings;
+DROP POLICY IF EXISTS "Admins can view all bookings" ON public.room_bookings;
+DROP POLICY IF EXISTS "Users can create bookings" ON public.room_bookings;
+DROP POLICY IF EXISTS "Users can update their own bookings" ON public.room_bookings;
+DROP POLICY IF EXISTS "Leaders and admins can update bookings" ON public.room_bookings;
 
-CREATE POLICY "Users can view their own bookings" ON room_bookings FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Leaders can view team bookings" ON room_bookings FOR SELECT USING (
+CREATE POLICY "Users can view their own bookings" ON public.room_bookings FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Leaders can view team bookings" ON public.room_bookings FOR SELECT USING (
   public.has_role(auth.uid(), 'leader') AND 
-  EXISTS (SELECT 1 FROM profiles WHERE id = user_id AND team_id = public.get_user_team(auth.uid()))
+  EXISTS (SELECT 1 FROM public.profiles WHERE id = user_id AND team_id = public.get_user_team(auth.uid()))
 );
-CREATE POLICY "Admins can view all bookings" ON room_bookings FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
-CREATE POLICY "Users can create bookings" ON room_bookings FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update their own bookings" ON room_bookings FOR UPDATE USING (auth.uid() = user_id);
-CREATE POLICY "Leaders and admins can update bookings" ON room_bookings FOR UPDATE USING (
+CREATE POLICY "Admins can view all bookings" ON public.room_bookings FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "Users can create bookings" ON public.room_bookings FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update their own bookings" ON public.room_bookings FOR UPDATE USING (auth.uid() = user_id);
+CREATE POLICY "Leaders and admins can update bookings" ON public.room_bookings FOR UPDATE USING (
   public.has_role(auth.uid(), 'leader') OR public.has_role(auth.uid(), 'admin')
 );
-```
 
-#### Leave Requests Policies
-```sql
-DROP POLICY IF EXISTS "Users can view their own leave requests" ON leave_requests;
-DROP POLICY IF EXISTS "Leaders can view team leave requests" ON leave_requests;
-DROP POLICY IF EXISTS "Admins can view all leave requests" ON leave_requests;
-DROP POLICY IF EXISTS "Users can create leave requests" ON leave_requests;
-DROP POLICY IF EXISTS "Users can update their pending requests" ON leave_requests;
-DROP POLICY IF EXISTS "Leaders and admins can update leave requests" ON leave_requests;
+-- LEAVE_REQUESTS
+DROP POLICY IF EXISTS "Users can view their own leave requests" ON public.leave_requests;
+DROP POLICY IF EXISTS "Leaders can view team leave requests" ON public.leave_requests;
+DROP POLICY IF EXISTS "Admins can view all leave requests" ON public.leave_requests;
+DROP POLICY IF EXISTS "Users can create leave requests" ON public.leave_requests;
+DROP POLICY IF EXISTS "Users can update their pending requests" ON public.leave_requests;
+DROP POLICY IF EXISTS "Leaders and admins can update leave requests" ON public.leave_requests;
 
-CREATE POLICY "Users can view their own leave requests" ON leave_requests FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Leaders can view team leave requests" ON leave_requests FOR SELECT USING (
+CREATE POLICY "Users can view their own leave requests" ON public.leave_requests FOR SELECT USING (auth.uid() = user_id);
+CREATE POLICY "Leaders can view team leave requests" ON public.leave_requests FOR SELECT USING (
   public.has_role(auth.uid(), 'leader') AND 
-  EXISTS (SELECT 1 FROM profiles WHERE id = user_id AND team_id = public.get_user_team(auth.uid()))
+  EXISTS (SELECT 1 FROM public.profiles WHERE id = user_id AND team_id = public.get_user_team(auth.uid()))
 );
-CREATE POLICY "Admins can view all leave requests" ON leave_requests FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
-CREATE POLICY "Users can create leave requests" ON leave_requests FOR INSERT WITH CHECK (auth.uid() = user_id);
-CREATE POLICY "Users can update their pending requests" ON leave_requests FOR UPDATE USING (
+CREATE POLICY "Admins can view all leave requests" ON public.leave_requests FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "Users can create leave requests" ON public.leave_requests FOR INSERT WITH CHECK (auth.uid() = user_id);
+CREATE POLICY "Users can update their pending requests" ON public.leave_requests FOR UPDATE USING (
   auth.uid() = user_id AND status = 'pending'
 );
-CREATE POLICY "Leaders and admins can update leave requests" ON leave_requests FOR UPDATE USING (
+CREATE POLICY "Leaders and admins can update leave requests" ON public.leave_requests FOR UPDATE USING (
   public.has_role(auth.uid(), 'leader') OR public.has_role(auth.uid(), 'admin')
 );
-```
 
-#### Audit Logs Policies
-```sql
-DROP POLICY IF EXISTS "Admins can view audit logs" ON audit_logs;
-DROP POLICY IF EXISTS "System can insert audit logs" ON audit_logs;
+-- AUDIT_LOGS
+DROP POLICY IF EXISTS "Admins can view audit logs" ON public.audit_logs;
+DROP POLICY IF EXISTS "System can insert audit logs" ON public.audit_logs;
+CREATE POLICY "Admins can view audit logs" ON public.audit_logs FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
+CREATE POLICY "System can insert audit logs" ON public.audit_logs FOR INSERT WITH CHECK (true);
 
-CREATE POLICY "Admins can view audit logs" ON audit_logs FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
-CREATE POLICY "System can insert audit logs" ON audit_logs FOR INSERT WITH CHECK (true);
-```
 
-### Step 8: Create Indexes for Performance
+-- 8) Indexes for performance
+CREATE INDEX IF NOT EXISTS idx_profiles_team_id ON public.profiles(team_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_shift_id ON public.profiles(shift_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_user_id ON public.attendance(user_id);
+CREATE INDEX IF NOT EXISTS idx_attendance_timestamp ON public.attendance(timestamp);
+CREATE INDEX IF NOT EXISTS idx_tasks_assignee_id ON public.tasks(assignee_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_creator_id ON public.tasks(creator_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_team_id ON public.tasks(team_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON public.tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON public.tasks(column_id);
+CREATE INDEX IF NOT EXISTS idx_task_columns_created_by ON public.task_columns(created_by);
+CREATE INDEX IF NOT EXISTS idx_room_bookings_room_id ON public.room_bookings(room_id);
+CREATE INDEX IF NOT EXISTS idx_room_bookings_user_id ON public.room_bookings(user_id);
+CREATE INDEX IF NOT EXISTS idx_room_bookings_start_time ON public.room_bookings(start_time);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_user_id ON public.leave_requests(user_id);
+CREATE INDEX IF NOT EXISTS idx_leave_requests_status ON public.leave_requests(status);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at);
 
-```sql
-CREATE INDEX IF NOT EXISTS idx_profiles_team_id ON profiles(team_id);
-CREATE INDEX IF NOT EXISTS idx_profiles_shift_id ON profiles(shift_id);
-CREATE INDEX IF NOT EXISTS idx_attendance_user_id ON attendance(user_id);
-CREATE INDEX IF NOT EXISTS idx_attendance_timestamp ON attendance(timestamp);
-CREATE INDEX IF NOT EXISTS idx_tasks_assignee_id ON tasks(assignee_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_creator_id ON tasks(creator_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_team_id ON tasks(team_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON tasks(column_id);
-CREATE INDEX IF NOT EXISTS idx_task_columns_created_by ON task_columns(created_by);
-CREATE INDEX IF NOT EXISTS idx_room_bookings_room_id ON room_bookings(room_id);
-CREATE INDEX IF NOT EXISTS idx_room_bookings_user_id ON room_bookings(user_id);
-CREATE INDEX IF NOT EXISTS idx_room_bookings_start_time ON room_bookings(start_time);
-CREATE INDEX IF NOT EXISTS idx_leave_requests_user_id ON leave_requests(user_id);
-CREATE INDEX IF NOT EXISTS idx_leave_requests_status ON leave_requests(status);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON audit_logs(user_id);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
-```
 
-### Step 9: Configure Storage
+-- 9) Storage notes (no SQL) - Create these buckets in Supabase Storage UI:
+--   - avatars (public)
+--   - documents (private)
+--   - task-attachments (private)
 
-Go to Supabase Dashboard > Storage and create these buckets:
 
-1. **avatars** - For user profile pictures
-   - Make public (disable RLS if needed for public avatars)
-   
-2. **documents** - For CV files and documents
-   - Keep private, configure RLS if needed
-   
-3. **task-attachments** - For task attachments
-   - Keep private, configure RLS if needed
+-- 10) Quick smoke test rows (optional) -- uncomment to create a sample team/shift (useful for initial testing)
+-- INSERT INTO public.shifts (name, start_time, end_time) VALUES ('Morning', '08:00', '17:00') ON CONFLICT DO NOTHING;
+-- INSERT INTO public.teams (name, description) VALUES ('Engineering', 'Eng Team') ON CONFLICT DO NOTHING;
+--11)CV
+CREATE TABLE IF NOT EXISTS public.profiles (
+    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    email TEXT NOT NULL UNIQUE,
+    first_name TEXT,
+    last_name TEXT,
+    avatar_url TEXT,
+    cv_url TEXT,
+    team_id UUID REFERENCES public.teams(id) ON DELETE SET NULL,
+    shift_id UUID REFERENCES public.shifts(id) ON DELETE SET NULL,
+    phone TEXT,
+    date_of_birth DATE,
+    annual_leave_balance INTEGER DEFAULT 12,
+    last_online TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
+DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
 
-### Step 10: Test the Setup
+-- Thêm chính sách RLS Update
+CREATE POLICY "Users can update their own profile" ON public.profiles 
+FOR UPDATE 
+USING (auth.uid() = id) 
+WITH CHECK (auth.uid() = id); -- Tùy chọn: Thêm WITH CHECK để kiểm tra cả dữ liệu đầu vào
 
-1. Create a test user in Authentication
-2. Verify profile is auto-created via trigger
-3. Test RLS policies with test queries
-4. Verify all tables and functions exist
+-- Thêm chính sách RLS Select (đã có trong script gốc)
+CREATE POLICY "Users can view their own profile" ON public.profiles
+FOR SELECT 
+USING (auth.uid() = id);+
 
-## Troubleshooting
+-- Cho phép người dùng đã xác thực upload/update file trong bucket 'avatars'
+CREATE POLICY "Allow authenticated users to upload/update avatars"
+ON storage.objects FOR ALL
+TO authenticated
+USING (bucket_id = 'avatars');
+-- Cho phép mọi người xem file trong bucket 'avatars'
+CREATE POLICY "Allow everyone to view avatars"
+ON storage.objects FOR SELECT
+TO public
+USING (bucket_id = 'avatars');
 
-### Profile not found error
-- Check that the auth user trigger is active
-- Manually insert a profile: `INSERT INTO profiles (id, email) VALUES (user_uuid, user_email);`
+-- Cho phép người dùng đã xác thực upload file vào bucket 'documents'
+CREATE POLICY "Allow authenticated users to upload documents"
+ON storage.objects FOR INSERT
+TO authenticated
+USING (bucket_id = 'documents');
+-- Cho phép người dùng xem file của chính họ trong bucket 'documents'
+CREATE POLICY "Allow user to view their own documents"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'documents' AND 
+  -- Kiểm tra xem tên file có bắt đầu bằng user ID hay không
+  storage.filename(name) LIKE (auth.uid()::text || '-%')
+);
 
-### RLS permission errors (406, 400)
-- Verify RLS policies are correctly created
-- Check that user has appropriate role assigned
-- Ensure security definer functions are properly set up
+-- Cho phép Admins và Leaders xem tất cả file trong bucket 'documents'
+CREATE POLICY "Allow admins/leaders to view all documents"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'documents' AND
+  (public.has_role(auth.uid(), 'admin') OR public.has_role(auth.uid(), 'leader'))
+);
+CREATE POLICY "Allow authenticated users to upload documents"
+ON storage.objects FOR INSERT
+TO authenticated
+USING (bucket_id = 'documents');
 
-### Schema cache errors (400)
-- Wait 30 seconds for schema cache refresh
-- Or hard refresh browser (Ctrl+F5)
+-- CHẠY TỪNG DÒNG MỘT:
+DROP POLICY IF EXISTS "Allow authenticated users to upload/update avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Allow user to manage their avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Allow user to update their avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Allow everyone to view avatars" ON storage.objects;
 
-## Features Included
-
-✅ User Management with roles (admin, leader, staff)
-✅ Team Management
-✅ Attendance Tracking
-✅ Task Management with dynamic columns
-✅ Leave Requests
-✅ Meeting Room Bookings
-✅ Profile Management with avatar upload
-✅ Row Level Security (RLS) for all tables
-✅ Automatic timestamp management
-✅ Audit logging
+DROP POLICY IF EXISTS "Allow authenticated users to upload documents" ON storage.objects;
+DROP POLICY IF EXISTS "Allow user to upload their documents only" ON storage.objects;
+DROP POLICY IF EXISTS "Allow user to update their documents only" ON storage.objects;
+DROP POLICY IF EXISTS "Allow user to view their own documents" ON storage.objects;
+DROP POLICY IF EXISTS "Allow admins/leaders to view all documents" ON storage.objects;
+DROP POLICY IF EXISTS "Allow user to manage their avatars" ON storage.objects;
+CREATE POLICY "Allow user to manage their avatars"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'avatars' AND 
+  name ILIKE ('avatars/' || auth.uid()::text || '-%')
+);
+CREATE POLICY "Allow user to update their avatars"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (
+  bucket_id = 'avatars' AND 
+  name ILIKE ('avatars/' || auth.uid()::text || '-%')
+);
+CREATE POLICY "Allow everyone to view avatars"
+ON storage.objects FOR SELECT
+TO public
+USING (bucket_id = 'avatars');
