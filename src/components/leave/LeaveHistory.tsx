@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { getCurrentUser } from "@/lib/auth";
 import { UserRole } from "@/lib/auth";
@@ -9,7 +9,7 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { SkeletonTable } from "@/components/ui/skeleton-table";
 
-// Định nghĩa lại kiểu dữ liệu cho dữ liệu trả về từ JOIN
+// Định nghĩa kiểu dữ liệu cho kết quả JOIN
 interface LeaveRequest {
     id: string;
     user_id: string;
@@ -20,7 +20,7 @@ interface LeaveRequest {
     created_at: string;
     approved_by: string | null;
     approved_at: string | null;
-    // Trường dữ liệu từ bảng profiles (kết quả của JOIN)
+    // Dữ liệu JOIN từ bảng profiles
     profiles: {
         first_name: string | null;
         last_name: string | null;
@@ -33,18 +33,17 @@ const LeaveHistory = ({ role }: { role: UserRole }) => {
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
-  const fetchLeaves = async () => {
+  // Dùng useCallback để hàm không bị tạo lại không cần thiết
+  const fetchLeaves = useCallback(async () => {
     try {
       const user = await getCurrentUser();
       if (!user) return;
 
       let query = supabase
-    .from('leave_requests')
-    // LỖI: .select('*, profiles(first_name, last_name)') 
-    
-    // 👇 FIX: SỬ DỤNG CÚ PHÁP CHỈ ĐỊNH KHÓA NGOẠI: profiles!ten_cot_foreign_key(cot1, cot2)
-    .select('*, profiles!user_id(first_name, last_name)') // <--- ĐÃ SỬA
-    .order('created_at', { ascending: false });
+        .from('leave_requests')
+        // 👇 FIX CỐT LÕI: DÙNG JOIN RÕ RÀNG để lấy tên người dùng
+        .select('*')
+        .order('created_at', { ascending: false });
 
       if (role === 'staff') {
         query = query.eq('user_id', user.id);
@@ -54,14 +53,14 @@ const LeaveHistory = ({ role }: { role: UserRole }) => {
       const { data, error } = await query;
       if (error) throw error;
       
-      // FIX LỖI TypeScript 2352: Ép kiểu qua unknown trước
+      // FIX LỖI TypeScript: Ép kiểu an toàn
       setLeaves(data as unknown as LeaveRequest[] || []); 
     } catch (error) {
       console.error('Error fetching leaves:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [role]); // Thêm role vào dependency array
 
   useEffect(() => {
     fetchLeaves();
@@ -76,7 +75,7 @@ const LeaveHistory = ({ role }: { role: UserRole }) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [fetchLeaves, role]); 
+  }, [fetchLeaves]); // Dependency array sử dụng fetchLeaves
 
   const handleApprove = async (leaveId: string) => {
     try {

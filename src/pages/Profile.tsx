@@ -551,62 +551,8 @@ export default function Profile() {
             </CardContent>
           </Card>
 
-          {/* Organization Info Card */}
-          <Card className="shadow-medium transition-smooth hover:shadow-strong">
-            <CardHeader>
-              <CardTitle>Organization Information</CardTitle>
-              <CardDescription>Your team and work details</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Users className="h-4 w-4 text-primary" />
-                    Team
-                  </Label>
-                  <div className="px-4 py-3 bg-secondary/50 rounded-md border border-border">
-                    <p className="text-sm font-medium">{team?.name || "Not assigned"}</p>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-primary" />
-                    Shift
-                  </Label>
-                  <div className="px-4 py-3 bg-secondary/50 rounded-md border border-border">
-                    <p className="text-sm font-medium">
-                      {shift ? `${shift.name} (${shift.start_time} - ${shift.end_time})` : "Not assigned"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Briefcase className="h-4 w-4 text-primary" />
-                    Annual Leave Balance
-                  </Label>
-                  <div className="px-4 py-3 bg-gradient-primary rounded-md">
-                    <p className="text-2xl font-bold text-primary-foreground">
-                      {profile.annual_leave_balance} days
-                    </p>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-primary" />
-                    Last Online
-                  </Label>
-                  <div className="px-4 py-3 bg-secondary/50 rounded-md border border-border">
-                    <p className="text-sm font-medium">
-                      {profile.last_online ? new Date(profile.last_online).toLocaleString() : "Never"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+          
+         
         </div>
       </div>
     </DashboardLayout>

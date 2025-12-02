@@ -66,7 +66,6 @@ const UsersManagement = () => {
               <TableHead>User</TableHead>
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
-              <TableHead>Team</TableHead>
               <TableHead>Shift</TableHead>
               <TableHead>Leave Balance</TableHead>
             </TableRow>

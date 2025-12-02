@@ -3,7 +3,6 @@ import DashboardLayout from "@/components/layout/DashboardLayout";
 import { getUserRole, getCurrentUser } from "@/lib/auth";
 import { UserRole } from "@/lib/auth";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import TeamsManagement from "@/components/organization/TeamsManagement";
 import ShiftsManagement from "@/components/organization/ShiftsManagement";
 import UsersManagement from "@/components/organization/UsersManagement";
 import AttendanceSettings from "@/components/organization/AttendanceSettings";
@@ -53,7 +52,7 @@ const Organization = () => {
             <TabsTrigger value="settings" className="data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">Attendance</TabsTrigger>
           </TabsList>
           <TabsContent value="teams" className="mt-6">
-            <TeamsManagement />
+            {/* <TeamsManagement /> */}
           </TabsContent>
           <TabsContent value="users" className="mt-6">
             <UsersManagement />
