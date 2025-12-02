@@ -29,8 +29,8 @@ interface UserProfile {
   email: string;
   first_name: string | null;
   last_name: string | null;
-  avatar_url: string | null; // Sẽ là public URL
-  cv_url: string | null; // Sẽ là file path (ví dụ: documents/user_id-cv-timestamp.pdf)
+  avatar_url: string | null; // Public URL
+  cv_url: string | null; // File Path (documents/user-id-cv-timestamp.pdf)
   team_id: string | null;
   shift_id: string | null;
   phone: string | null;
@@ -59,7 +59,7 @@ export default function Profile() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [team, setTeam] = useState<Team | null>(null);
   const [shift, setShift] = useState<Shift | null>(null);
-  // Thêm state cho Signed URL của CV
+  // State cho Signed URL của CV (để hiển thị link tải về bảo mật)
   const [cvSignedUrl, setCvSignedUrl] = useState<string | null>(null); 
 
   const form = useForm<ProfileFormData>({
@@ -75,7 +75,7 @@ export default function Profile() {
   // Hàm tạo Signed URL (URL có thời hạn) cho file Private
   const getSignedUrl = useCallback(async (path: string) => {
     try {
-        // Thời hạn 60 giây (hoặc tùy chỉnh)
+        // Thời hạn 60 giây
         const { data } = await supabase.storage
             .from('documents')
             .createSignedUrl(path, 60); 
@@ -102,7 +102,8 @@ export default function Profile() {
 
       if (profileError) throw profileError;
 
-      setProfile(profileData as UserProfile);
+      // FIX TypeScript Error 2352: Ép kiểu qua 'unknown' trước
+      setProfile(profileData as unknown as UserProfile);
 
       form.reset({
         first_name: profileData.first_name || "",
@@ -112,13 +113,14 @@ export default function Profile() {
       });
       
       // Xử lý Signed URL cho CV (nếu có cv_url)
-      if (profileData.cv_url) {
+      if (profileData && profileData.cv_url) {
           const url = await getSignedUrl(profileData.cv_url);
           setCvSignedUrl(url);
       } else {
           setCvSignedUrl(null);
       }
 
+      // Fetch Team Info
       if (profileData.team_id) {
         const { data: teamData } = await supabase
           .from("teams")
@@ -128,6 +130,7 @@ export default function Profile() {
         setTeam(teamData);
       }
 
+      // Fetch Shift Info
       if (profileData.shift_id) {
         const { data: shiftData } = await supabase
           .from("shifts")
@@ -142,7 +145,7 @@ export default function Profile() {
     } finally {
       setLoading(false);
     }
-  }, [navigate, form, getSignedUrl]); // Thêm getSignedUrl vào dependency array
+  }, [navigate, form, getSignedUrl]);
 
   useEffect(() => {
     loadProfile();
@@ -170,7 +173,7 @@ export default function Profile() {
 
       toast.success("Profile updated successfully");
       
-      // Tối ưu hóa: Cập nhật state cục bộ thay vì gọi loadProfile()
+      // Tối ưu hóa: Cập nhật state cục bộ thay vì gọi lại loadProfile()
       setProfile(prevProfile => {
           if (!prevProfile) return null;
           return {
@@ -203,7 +206,8 @@ export default function Profile() {
 
       const fileExt = file.name.split(".").pop();
       const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-      const filePath = `avatars/${fileName}`;
+      // ĐÚNG: SỬ DỤNG FULL PATH CHO STORAGE
+      const filePath = `avatars/${fileName}`; 
 
       // 1. Upload file
       const { error: uploadError } = await supabase.storage
@@ -264,7 +268,9 @@ export default function Profile() {
    if (!user) return;
 
    const fileName = `${user.id}-cv-${Date.now()}.pdf`;
-   const filePath = fileName;
+   // ĐÚNG: SỬ DỤNG FULL PATH CHO STORAGE (documents/user-id-...)
+   const filePath = `documents/${fileName}`; 
+      
       // 1. Upload file
       const { error: uploadError } = await supabase.storage
         .from("documents")
@@ -272,10 +278,10 @@ export default function Profile() {
 
       if (uploadError) throw uploadError;
 
-      // 2. Cập nhật profile (lưu FILE PATH thay vì public URL để bảo mật)
+      // 2. Cập nhật profile (lưu FILE PATH ĐẦY ĐỦ vào DB)
       const { error: updateError } = await supabase
         .from("profiles")
-        .update({ cv_url: filePath }) // <-- LƯU FILE PATH
+        .update({ cv_url: filePath }) 
         .eq("id", user.id);
 
       if (updateError) throw updateError;
@@ -290,7 +296,7 @@ export default function Profile() {
               cv_url: filePath,
           };
       });
-      // Tạo signed URL mới ngay sau khi upload để hiển thị link
+      // Tạo signed URL mới ngay sau khi upload
       const newSignedUrl = await getSignedUrl(filePath);
       setCvSignedUrl(newSignedUrl);
       
@@ -336,7 +342,6 @@ export default function Profile() {
 
         <div className="grid gap-6">
           {/* Avatar Card */}
-          {/* ... (Giữ nguyên phần Avatar) ... */}
           <Card className="shadow-medium transition-smooth hover:shadow-strong">
             <CardHeader>
               <CardTitle>Profile Picture</CardTitle>
@@ -444,7 +449,6 @@ export default function Profile() {
           </Card>
           
           {/* Personal Information Card */}
-          {/* ... (Giữ nguyên phần Personal Info) ... */}
           <Card className="shadow-medium transition-smooth hover:shadow-strong">
             <CardHeader>
               <CardTitle>Personal Information</CardTitle>
@@ -548,7 +552,6 @@ export default function Profile() {
           </Card>
 
           {/* Organization Info Card */}
-          {/* ... (Giữ nguyên phần Organization Info) ... */}
           <Card className="shadow-medium transition-smooth hover:shadow-strong">
             <CardHeader>
               <CardTitle>Organization Information</CardTitle>

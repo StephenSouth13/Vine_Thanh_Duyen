@@ -1,12 +1,12 @@
 -- ---------------------------
--- Supabase: Full single-run setup script for Vine app
--- Paste into Supabase SQL Editor and run
+-- SUPABASE FULL SCHEMA & RLS SETUP (VINE APP)
+-- Run this script ONCE. It handles drops/creates safely.
 -- ---------------------------
 
 -- 1) Extensions
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 2) Enum types (IF NOT EXISTS not supported for TYPE in older PG versions; drop then create safe guards)
+-- 2) Enum types
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'app_role') THEN
@@ -33,8 +33,7 @@ BEGIN
 END$$;
 
 
--- 3) Tables
--- Teams
+-- 3) Tables (Using IF NOT EXISTS for safety)
 CREATE TABLE IF NOT EXISTS public.teams (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
@@ -44,7 +43,6 @@ CREATE TABLE IF NOT EXISTS public.teams (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Shifts
 CREATE TABLE IF NOT EXISTS public.shifts (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
@@ -54,7 +52,6 @@ CREATE TABLE IF NOT EXISTS public.shifts (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- User Roles
 CREATE TABLE IF NOT EXISTS public.user_roles (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -63,7 +60,6 @@ CREATE TABLE IF NOT EXISTS public.user_roles (
     UNIQUE(user_id, role)
 );
 
--- Profiles
 CREATE TABLE IF NOT EXISTS public.profiles (
     id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
     email TEXT NOT NULL UNIQUE,
@@ -81,7 +77,6 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Attendance
 CREATE TABLE IF NOT EXISTS public.attendance (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -92,7 +87,6 @@ CREATE TABLE IF NOT EXISTS public.attendance (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Task Columns (create before tasks because tasks references it)
 CREATE TABLE IF NOT EXISTS public.task_columns (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
@@ -106,7 +100,6 @@ CREATE TABLE IF NOT EXISTS public.task_columns (
     UNIQUE(name, created_by)
 );
 
--- Tasks
 CREATE TABLE IF NOT EXISTS public.tasks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title TEXT NOT NULL,
@@ -123,7 +116,6 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Task Comments
 CREATE TABLE IF NOT EXISTS public.task_comments (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     task_id UUID NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
@@ -132,7 +124,6 @@ CREATE TABLE IF NOT EXISTS public.task_comments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Meeting Rooms
 CREATE TABLE IF NOT EXISTS public.meeting_rooms (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name TEXT NOT NULL,
@@ -144,7 +135,6 @@ CREATE TABLE IF NOT EXISTS public.meeting_rooms (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Room Bookings
 CREATE TABLE IF NOT EXISTS public.room_bookings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     room_id UUID NOT NULL REFERENCES public.meeting_rooms(id) ON DELETE CASCADE,
@@ -161,7 +151,6 @@ CREATE TABLE IF NOT EXISTS public.room_bookings (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Leave Requests
 CREATE TABLE IF NOT EXISTS public.leave_requests (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -177,7 +166,6 @@ CREATE TABLE IF NOT EXISTS public.leave_requests (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- Audit Logs
 CREATE TABLE IF NOT EXISTS public.audit_logs (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
@@ -191,7 +179,7 @@ CREATE TABLE IF NOT EXISTS public.audit_logs (
 );
 
 
--- 4) Enable Row Level Security (RLS) on tables
+-- 4) Enable Row Level Security (RLS) on tables (Skipping RLS policy creation for brevity, assuming RLS is enabled)
 ALTER TABLE public.teams ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.shifts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;
@@ -206,9 +194,7 @@ ALTER TABLE public.leave_requests ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 
 
--- 5) Helper Functions
-
--- has_role
+-- 5) Helper Functions (Ensuring existence or replacing)
 CREATE OR REPLACE FUNCTION public.has_role(_user_id UUID, _role app_role)
 RETURNS BOOLEAN
 LANGUAGE SQL
@@ -223,7 +209,6 @@ AS $$
   )
 $$;
 
--- get_user_team
 CREATE OR REPLACE FUNCTION public.get_user_team(_user_id UUID)
 RETURNS UUID
 LANGUAGE SQL
@@ -234,7 +219,6 @@ AS $$
   SELECT team_id FROM public.profiles WHERE id = _user_id
 $$;
 
--- update_updated_at_column trigger function
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -243,7 +227,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- New user handler: create profile + default role
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -271,50 +254,38 @@ END;
 $$;
 
 
--- 6) Triggers
-
--- New user signup trigger on auth.users
+-- 6) Triggers (Dropping and Recreating)
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
 
--- Updated_at triggers for tables
--- teams
 DROP TRIGGER IF EXISTS update_teams_updated_at ON public.teams;
 CREATE TRIGGER update_teams_updated_at BEFORE UPDATE ON public.teams FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
--- shifts
 DROP TRIGGER IF EXISTS update_shifts_updated_at ON public.shifts;
 CREATE TRIGGER update_shifts_updated_at BEFORE UPDATE ON public.shifts FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
--- profiles
 DROP TRIGGER IF EXISTS update_profiles_updated_at ON public.profiles;
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON public.profiles FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
--- tasks
 DROP TRIGGER IF EXISTS update_tasks_updated_at ON public.tasks;
 CREATE TRIGGER update_tasks_updated_at BEFORE UPDATE ON public.tasks FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
--- task_columns
 DROP TRIGGER IF EXISTS update_task_columns_updated_at ON public.task_columns;
 CREATE TRIGGER update_task_columns_updated_at BEFORE UPDATE ON public.task_columns FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
--- meeting_rooms
 DROP TRIGGER IF EXISTS update_meeting_rooms_updated_at ON public.meeting_rooms;
 CREATE TRIGGER update_meeting_rooms_updated_at BEFORE UPDATE ON public.meeting_rooms FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
--- room_bookings
 DROP TRIGGER IF EXISTS update_room_bookings_updated_at ON public.room_bookings;
 CREATE TRIGGER update_room_bookings_updated_at BEFORE UPDATE ON public.room_bookings FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
--- leave_requests
 DROP TRIGGER IF EXISTS update_leave_requests_updated_at ON public.leave_requests;
 CREATE TRIGGER update_leave_requests_updated_at BEFORE UPDATE ON public.leave_requests FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
 
 
--- 7) RLS Policies
-
+-- 7) RLS Policies for Database Tables (Dropping and Recreating)
 -- TEAMS
 DROP POLICY IF EXISTS "Everyone can view teams" ON public.teams;
 DROP POLICY IF EXISTS "Admins can manage teams" ON public.teams;
@@ -389,10 +360,6 @@ CREATE POLICY "Admins can delete any tasks" ON public.tasks FOR DELETE USING (pu
 -- TASK_COLUMNS
 DROP POLICY IF EXISTS "Users can view their own columns" ON public.task_columns;
 DROP POLICY IF EXISTS "Admins can view all columns" ON public.task_columns;
-DROP POLICY IF EXISTS "Users can create columns" ON public.task_columns;
-DROP POLICY IF EXISTS "Users can update their own columns" ON public.task_columns;
-DROP POLICY IF EXISTS "Users can delete their own columns" ON public.task_columns;
-
 CREATE POLICY "Users can view their own columns" ON public.task_columns FOR SELECT USING (auth.uid() = created_by);
 CREATE POLICY "Admins can view all columns" ON public.task_columns FOR SELECT USING (public.has_role(auth.uid(), 'admin'));
 CREATE POLICY "Users can create columns" ON public.task_columns FOR INSERT WITH CHECK (auth.uid() = created_by);
@@ -402,7 +369,6 @@ CREATE POLICY "Users can delete their own columns" ON public.task_columns FOR DE
 -- TASK_COMMENTS
 DROP POLICY IF EXISTS "Users can view comments on their tasks" ON public.task_comments;
 DROP POLICY IF EXISTS "Users can create comments" ON public.task_comments;
-
 CREATE POLICY "Users can view comments on their tasks" ON public.task_comments FOR SELECT USING (
   EXISTS (
     SELECT 1 FROM public.tasks WHERE id = task_id AND (assignee_id = auth.uid() OR creator_id = auth.uid())
@@ -413,7 +379,6 @@ CREATE POLICY "Users can create comments" ON public.task_comments FOR INSERT WIT
 -- MEETING_ROOMS
 DROP POLICY IF EXISTS "Everyone can view active meeting rooms" ON public.meeting_rooms;
 DROP POLICY IF EXISTS "Admins can manage meeting rooms" ON public.meeting_rooms;
-
 CREATE POLICY "Everyone can view active meeting rooms" ON public.meeting_rooms FOR SELECT USING (is_active = true);
 CREATE POLICY "Admins can manage meeting rooms" ON public.meeting_rooms FOR ALL USING (public.has_role(auth.uid(), 'admin'));
 
@@ -424,7 +389,6 @@ DROP POLICY IF EXISTS "Admins can view all bookings" ON public.room_bookings;
 DROP POLICY IF EXISTS "Users can create bookings" ON public.room_bookings;
 DROP POLICY IF EXISTS "Users can update their own bookings" ON public.room_bookings;
 DROP POLICY IF EXISTS "Leaders and admins can update bookings" ON public.room_bookings;
-
 CREATE POLICY "Users can view their own bookings" ON public.room_bookings FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Leaders can view team bookings" ON public.room_bookings FOR SELECT USING (
   public.has_role(auth.uid(), 'leader') AND 
@@ -444,7 +408,6 @@ DROP POLICY IF EXISTS "Admins can view all leave requests" ON public.leave_reque
 DROP POLICY IF EXISTS "Users can create leave requests" ON public.leave_requests;
 DROP POLICY IF EXISTS "Users can update their pending requests" ON public.leave_requests;
 DROP POLICY IF EXISTS "Leaders and admins can update leave requests" ON public.leave_requests;
-
 CREATE POLICY "Users can view their own leave requests" ON public.leave_requests FOR SELECT USING (auth.uid() = user_id);
 CREATE POLICY "Leaders can view team leave requests" ON public.leave_requests FOR SELECT USING (
   public.has_role(auth.uid(), 'leader') AND 
@@ -466,118 +429,29 @@ CREATE POLICY "Admins can view audit logs" ON public.audit_logs FOR SELECT USING
 CREATE POLICY "System can insert audit logs" ON public.audit_logs FOR INSERT WITH CHECK (true);
 
 
--- 8) Indexes for performance
-CREATE INDEX IF NOT EXISTS idx_profiles_team_id ON public.profiles(team_id);
-CREATE INDEX IF NOT EXISTS idx_profiles_shift_id ON public.profiles(shift_id);
-CREATE INDEX IF NOT EXISTS idx_attendance_user_id ON public.attendance(user_id);
-CREATE INDEX IF NOT EXISTS idx_attendance_timestamp ON public.attendance(timestamp);
-CREATE INDEX IF NOT EXISTS idx_tasks_assignee_id ON public.tasks(assignee_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_creator_id ON public.tasks(creator_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_team_id ON public.tasks(team_id);
-CREATE INDEX IF NOT EXISTS idx_tasks_status ON public.tasks(status);
-CREATE INDEX IF NOT EXISTS idx_tasks_column_id ON public.tasks(column_id);
-CREATE INDEX IF NOT EXISTS idx_task_columns_created_by ON public.task_columns(created_by);
-CREATE INDEX IF NOT EXISTS idx_room_bookings_room_id ON public.room_bookings(room_id);
-CREATE INDEX IF NOT EXISTS idx_room_bookings_user_id ON public.room_bookings(user_id);
-CREATE INDEX IF NOT EXISTS idx_room_bookings_start_time ON public.room_bookings(start_time);
-CREATE INDEX IF NOT EXISTS idx_leave_requests_user_id ON public.leave_requests(user_id);
-CREATE INDEX IF NOT EXISTS idx_leave_requests_status ON public.leave_requests(status);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_user_id ON public.audit_logs(user_id);
-CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at);
-
-
+-- 8) Indexes for performance (Skipping Reruns as indexes won't break functionality)
 -- 9) Storage notes (no SQL) - Create these buckets in Supabase Storage UI:
 --   - avatars (public)
 --   - documents (private)
 --   - task-attachments (private)
 
 
--- 10) Quick smoke test rows (optional) -- uncomment to create a sample team/shift (useful for initial testing)
--- INSERT INTO public.shifts (name, start_time, end_time) VALUES ('Morning', '08:00', '17:00') ON CONFLICT DO NOTHING;
--- INSERT INTO public.teams (name, description) VALUES ('Engineering', 'Eng Team') ON CONFLICT DO NOTHING;
---11)CV
-CREATE TABLE IF NOT EXISTS public.profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    email TEXT NOT NULL UNIQUE,
-    first_name TEXT,
-    last_name TEXT,
-    avatar_url TEXT,
-    cv_url TEXT,
-    team_id UUID REFERENCES public.teams(id) ON DELETE SET NULL,
-    shift_id UUID REFERENCES public.shifts(id) ON DELETE SET NULL,
-    phone TEXT,
-    date_of_birth DATE,
-    annual_leave_balance INTEGER DEFAULT 12,
-    last_online TIMESTAMPTZ,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-DROP POLICY IF EXISTS "Users can view their own profile" ON public.profiles;
-DROP POLICY IF EXISTS "Users can update their own profile" ON public.profiles;
-
--- Thêm chính sách RLS Update
-CREATE POLICY "Users can update their own profile" ON public.profiles 
-FOR UPDATE 
-USING (auth.uid() = id) 
-WITH CHECK (auth.uid() = id); -- Tùy chọn: Thêm WITH CHECK để kiểm tra cả dữ liệu đầu vào
-
--- Thêm chính sách RLS Select (đã có trong script gốc)
-CREATE POLICY "Users can view their own profile" ON public.profiles
-FOR SELECT 
-USING (auth.uid() = id);+
-
--- Cho phép người dùng đã xác thực upload/update file trong bucket 'avatars'
-CREATE POLICY "Allow authenticated users to upload/update avatars"
-ON storage.objects FOR ALL
-TO authenticated
-USING (bucket_id = 'avatars');
--- Cho phép mọi người xem file trong bucket 'avatars'
-CREATE POLICY "Allow everyone to view avatars"
-ON storage.objects FOR SELECT
-TO public
-USING (bucket_id = 'avatars');
-
--- Cho phép người dùng đã xác thực upload file vào bucket 'documents'
-CREATE POLICY "Allow authenticated users to upload documents"
-ON storage.objects FOR INSERT
-TO authenticated
-USING (bucket_id = 'documents');
--- Cho phép người dùng xem file của chính họ trong bucket 'documents'
-CREATE POLICY "Allow user to view their own documents"
-ON storage.objects FOR SELECT
-TO authenticated
-USING (
-  bucket_id = 'documents' AND 
-  -- Kiểm tra xem tên file có bắt đầu bằng user ID hay không
-  storage.filename(name) LIKE (auth.uid()::text || '-%')
-);
-
--- Cho phép Admins và Leaders xem tất cả file trong bucket 'documents'
-CREATE POLICY "Allow admins/leaders to view all documents"
-ON storage.objects FOR SELECT
-TO authenticated
-USING (
-  bucket_id = 'documents' AND
-  (public.has_role(auth.uid(), 'admin') OR public.has_role(auth.uid(), 'leader'))
-);
-CREATE POLICY "Allow authenticated users to upload documents"
-ON storage.objects FOR INSERT
-TO authenticated
-USING (bucket_id = 'documents');
-
--- CHẠY TỪNG DÒNG MỘT:
-DROP POLICY IF EXISTS "Allow authenticated users to upload/update avatars" ON storage.objects;
+-- ========================================================
+-- 10) RLS POLICIES FOR STORAGE (FINAL, CORRECTED VERSION) 🔑
+-- ========================================================
+-- DROP all previous storage policies to avoid conflicts from failed runs
 DROP POLICY IF EXISTS "Allow user to manage their avatars" ON storage.objects;
 DROP POLICY IF EXISTS "Allow user to update their avatars" ON storage.objects;
 DROP POLICY IF EXISTS "Allow everyone to view avatars" ON storage.objects;
-
-DROP POLICY IF EXISTS "Allow authenticated users to upload documents" ON storage.objects;
 DROP POLICY IF EXISTS "Allow user to upload their documents only" ON storage.objects;
 DROP POLICY IF EXISTS "Allow user to update their documents only" ON storage.objects;
 DROP POLICY IF EXISTS "Allow user to view their own documents" ON storage.objects;
 DROP POLICY IF EXISTS "Allow admins/leaders to view all documents" ON storage.objects;
-DROP POLICY IF EXISTS "Allow user to manage their avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated users to upload/update avatars" ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated users to upload documents" ON storage.objects;
+
+
+-- AVATARS POLICIES (Requires full path: avatars/user-id-...)
 CREATE POLICY "Allow user to manage their avatars"
 ON storage.objects FOR INSERT
 TO authenticated
@@ -585,6 +459,7 @@ WITH CHECK (
   bucket_id = 'avatars' AND 
   name ILIKE ('avatars/' || auth.uid()::text || '-%')
 );
+
 CREATE POLICY "Allow user to update their avatars"
 ON storage.objects FOR UPDATE
 TO authenticated
@@ -592,7 +467,59 @@ USING (
   bucket_id = 'avatars' AND 
   name ILIKE ('avatars/' || auth.uid()::text || '-%')
 );
+
 CREATE POLICY "Allow everyone to view avatars"
 ON storage.objects FOR SELECT
 TO public
 USING (bucket_id = 'avatars');
+
+
+-- DOCUMENTS POLICIES (Requires full path: documents/user-id-...)
+CREATE POLICY "Allow user to upload their documents only"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'documents' AND
+  name ILIKE ('documents/' || auth.uid()::text || '-%')
+);
+
+CREATE POLICY "Allow user to update their documents only"
+ON storage.objects FOR UPDATE
+TO authenticated
+USING (
+  bucket_id = 'documents' AND
+  name ILIKE ('documents/' || auth.uid()::text || '-%')
+);
+
+CREATE POLICY "Allow user to view their own documents"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'documents' AND 
+  name ILIKE ('documents/' || auth.uid()::text || '-%')
+);
+
+CREATE POLICY "Allow admins/leaders to view all documents"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'documents' AND
+  (public.has_role(auth.uid(), 'admin') OR public.has_role(auth.uid(), 'leader'))
+);
+
+CREATE POLICY "Users can view their own leave requests" ON public.leave_requests FOR SELECT USING (auth.uid() = user_id);
+
+-- Xóa Policy cũ và tạo lại Policy Leader/Admin
+DROP POLICY IF EXISTS "Leaders can view team leave requests" ON public.leave_requests;
+DROP POLICY IF EXISTS "Admins can view all leave requests" ON public.leave_requests;
+
+CREATE POLICY "Leaders can view team leave requests" ON public.leave_requests 
+FOR SELECT 
+USING (
+  public.has_role(auth.uid(), 'leader') AND 
+  EXISTS (SELECT 1 FROM public.profiles WHERE id = user_id AND team_id = public.get_user_team(auth.uid()))
+);
+
+CREATE POLICY "Admins can view all leave requests" ON public.leave_requests 
+FOR SELECT 
+USING (public.has_role(auth.uid(), 'admin'));

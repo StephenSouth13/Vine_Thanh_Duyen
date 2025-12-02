@@ -9,8 +9,27 @@ import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { SkeletonTable } from "@/components/ui/skeleton-table";
 
+// Định nghĩa lại kiểu dữ liệu cho dữ liệu trả về từ JOIN
+interface LeaveRequest {
+    id: string;
+    user_id: string;
+    type: string;
+    start_date: string;
+    end_date: string;
+    status: 'pending' | 'approved' | 'rejected';
+    created_at: string;
+    approved_by: string | null;
+    approved_at: string | null;
+    // Trường dữ liệu từ bảng profiles (kết quả của JOIN)
+    profiles: {
+        first_name: string | null;
+        last_name: string | null;
+    } | null;
+}
+
 const LeaveHistory = ({ role }: { role: UserRole }) => {
-  const [leaves, setLeaves] = useState<any[]>([]);
+  // Sử dụng kiểu dữ liệu đã định nghĩa
+  const [leaves, setLeaves] = useState<LeaveRequest[]>([]); 
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
 
@@ -20,17 +39,23 @@ const LeaveHistory = ({ role }: { role: UserRole }) => {
       if (!user) return;
 
       let query = supabase
-        .from('leave_requests')
-        .select('*')
-        .order('created_at', { ascending: false });
+    .from('leave_requests')
+    // LỖI: .select('*, profiles(first_name, last_name)') 
+    
+    // 👇 FIX: SỬ DỤNG CÚ PHÁP CHỈ ĐỊNH KHÓA NGOẠI: profiles!ten_cot_foreign_key(cot1, cot2)
+    .select('*, profiles!user_id(first_name, last_name)') // <--- ĐÃ SỬA
+    .order('created_at', { ascending: false });
 
       if (role === 'staff') {
         query = query.eq('user_id', user.id);
       }
+      // RLS Policies sẽ lọc cho Leader/Admin
 
       const { data, error } = await query;
       if (error) throw error;
-      setLeaves(data || []);
+      
+      // FIX LỖI TypeScript 2352: Ép kiểu qua unknown trước
+      setLeaves(data as unknown as LeaveRequest[] || []); 
     } catch (error) {
       console.error('Error fetching leaves:', error);
     } finally {
@@ -51,7 +76,7 @@ const LeaveHistory = ({ role }: { role: UserRole }) => {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [role]);
+  }, [fetchLeaves, role]); 
 
   const handleApprove = async (leaveId: string) => {
     try {
@@ -136,7 +161,10 @@ const LeaveHistory = ({ role }: { role: UserRole }) => {
             <TableRow key={leave.id}>
               {(role === 'leader' || role === 'admin') && (
                 <TableCell>
-                  User {leave.user_id?.substring(0, 8)}
+                  {/** 👇 HIỂN THỊ TÊN ĐẦY ĐỦ TỪ DỮ LIỆU JOIN */}
+                  {leave.profiles ? 
+                        `${leave.profiles.first_name} ${leave.profiles.last_name}` 
+                        : `User ID: ${leave.user_id?.substring(0, 8)}`}
                 </TableCell>
               )}
               <TableCell className="capitalize">{leave.type.replace('_', ' ')}</TableCell>
